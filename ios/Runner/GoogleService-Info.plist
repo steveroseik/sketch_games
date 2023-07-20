@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>11138466879-lll2286k3neaddeirfnhfhji4cia3fv0.apps.googleusercontent.com</string>
+	<string>11138466879-h0ceg9l2sbn8jms1d32uq3cdulhq42bm.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.11138466879-lll2286k3neaddeirfnhfhji4cia3fv0</string>
+	<string>com.googleusercontent.apps.11138466879-h0ceg9l2sbn8jms1d32uq3cdulhq42bm</string>
 	<key>API_KEY</key>
 	<string>AIzaSyClP18aYkBPwhCcXu8JOg0gwJUnBVzSuyk</string>
 	<key>GCM_SENDER_ID</key>
@@ -29,6 +29,8 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:11138466879:ios:d0c7b7354f426ba277648a</string>
+	<string>1:11138466879:ios:5ce8eec9f8352f2a77648a</string>
+	<key>DATABASE_URL</key>
+	<string>https://sketch-games-default-rtdb.europe-west1.firebasedatabase.app</string>
 </dict>
 </plist>

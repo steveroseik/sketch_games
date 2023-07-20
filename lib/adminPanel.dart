@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:duration_picker/duration_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,6 +11,7 @@ import 'package:sketch_games/appObjects.dart';
 import 'package:sketch_games/configuration.dart';
 
 import 'customWidgets.dart';
+import 'notifiers.dart';
 
 
 class AdminPanel extends StatefulWidget {
@@ -27,10 +29,15 @@ class _AdminPanelState extends State<AdminPanel> {
   List<TeamObject> teams = <TeamObject>[];
 
   late StreamSubscription teamSub;
+  late StreamSubscription gameSub;
   bool loading = false;
   late DateTime pauseTime;
-  late Timer timer;
+  late Timer gameTimer;
+  late Timer clock;
+  late DateTime currentTime;
   bool gameStarted = false;
+
+  late BlackBox box;
 
   List<bool> timeSelected = [false, false, true];
   bool sortAsc = true;
@@ -38,18 +45,17 @@ class _AdminPanelState extends State<AdminPanel> {
 
   @override
   void initState() {
+    currentTime = DateTime.now();
+    initClock();
     generateGame();
-    timer = Timer.periodic(const Duration(seconds: 1), (timer) async{
-      if (game.startTime != null && !game.startTime!.isAfter(DateTime.now())){
-        if (!gameStarted){
-          setState(() {
-            gameStarted = true;
-          });
-        }
-
-      }
-    });
     super.initState();
+  }
+
+  initClock(){
+    clock = Timer.periodic(const Duration(seconds: 1), (timer) {
+      currentTime = DateTime.now();
+      refreshTeam.value = !refreshTeam.value;
+    });
   }
 
   generateGame() async{
@@ -66,7 +72,23 @@ class _AdminPanelState extends State<AdminPanel> {
           gameStarted = false;
         }
         setState(() {});
+        gameTimer = Timer.periodic(const Duration(seconds: 1), (timer) async{
+          if (game.startTime != null && !game.startTime!.isAfter(DateTime.now())){
+            if (!gameStarted){
+              setState(() {
+                gameStarted = true;
+              });
+            }
+          }else{
+            if (gameStarted){
+              setState(() {
+                gameStarted = false;
+              });
+            }
+          }
+        });
       }else{
+        gameTimer.cancel();
         print('no game');
       }
     }catch (e){
@@ -76,6 +98,15 @@ class _AdminPanelState extends State<AdminPanel> {
 
   initListeners(){
 
+    gameSub = FirebaseFirestore.instance.doc('gamesListeners/firstGame').snapshots().listen((event){
+
+      if (event.data() != null){
+        if (event.data()!['paused'] != game.paused){
+          setState(() => game.paused = !game.paused);
+        }
+      }
+    });
+
     teamSub = FirebaseFirestore.instance.collection('gamesListeners/firstGame/teams').snapshots().listen((event) {
 
       for (var e in event.docChanges){
@@ -84,7 +115,6 @@ class _AdminPanelState extends State<AdminPanel> {
         }else if (e.type == DocumentChangeType.added){
           teams.add(teamObjectFromShot(e.doc.data()!, e.doc.reference.path));
         }else{
-
           int i = teams.indexWhere((element) => element.id == e.doc.reference.path);
           if (i != -1){
             teams[i] = teamObjectFromShot(e.doc.data()!, e.doc.reference.path);
@@ -93,10 +123,9 @@ class _AdminPanelState extends State<AdminPanel> {
           }
         }
       }
-      print('updated teams');
       updateTeamsInfo();
 
-      refreshTeam.value = !refreshTeam.value;
+      // refreshTeam.value = !refreshTeam.value;
     });
 
   }
@@ -108,17 +137,23 @@ class _AdminPanelState extends State<AdminPanel> {
     }
     sortAsc ? teams.sort((a, b) => a.compareTo(b)) : teams.sort((a, b) => b.compareTo(a));
 
-    refreshTeam.value = !refreshTeam.value;
+    // refreshTeam.value = !refreshTeam.value;
   }
 
   @override
   void dispose() {
     teamSub.cancel();
+    gameSub.cancel();
+    clock.cancel();
+    gameTimer.cancel();
+    
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    box = BlackNotifier.of(context);
+    box.teams = teams;
     return Scaffold(
       appBar: AppBar(
         title: SizedBox(
@@ -128,10 +163,10 @@ class _AdminPanelState extends State<AdminPanel> {
               Align(
                   alignment: Alignment.centerLeft,
                   child: InkWell(
-                      onTap: () {
-                        Navigator.of(context).pushNamed('/nfc');
+                      onTap: () async{
+                        Navigator.of(context).pushNamed('/settings', arguments: game);
                       },
-                      child: const Icon(Icons.nfc))),
+                      child: const Icon(CupertinoIcons.gear_solid))),
               const Center(child: Text("ADMIN PANEL")),
               Align(
                 alignment: Alignment.centerRight,
@@ -159,22 +194,32 @@ class _AdminPanelState extends State<AdminPanel> {
                     children: [
                       SizedBox(height: 3.h,),
                       SizedBox(
-                        width: double.infinity,
-                        child: Text('FIRST GAME',
-                          style: TextStyle(
-                              fontFamily: 'Quartzo',
-                              fontSize: 30.sp
+                        width: 80.w,
+                        child: ElevatedButton.icon(
+                          onPressed: () async{
+                            Navigator.of(context).pushNamed('/notif', arguments: teams);
+                          },
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.black,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10.sp))
                           ),
-                          textAlign: TextAlign.center,
+                          icon: Icon(Icons.notifications_active, color: Colors.white),
+                          label: Text('Notifications Center',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10.sp,
+                            ),),
                         ),
-                      ).animate().slideY(delay: const Duration(milliseconds: 0),).fadeIn(),
+                      ),
                       SizedBox(height: 3.h,),
                       Text('Start Time', style: TextStyle(fontWeight: FontWeight.w800))
                       .animate().slideY(delay: const Duration(milliseconds: 100),).fadeIn(),
                       Container(
                         padding: EdgeInsets.all(5.w),
                         decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey, width: 1),
+                            border: Border.all(color: Colors.grey.shade300, width: 1),
+                            color: CupertinoColors.extraLightBackgroundGray,
                             borderRadius: BorderRadius.circular(10.sp)
                         ),
                         child: Column(
@@ -187,7 +232,7 @@ class _AdminPanelState extends State<AdminPanel> {
                                 height: 9.w,
                                 duration: const Duration(milliseconds: 200),
                                 decoration: BoxDecoration(
-                                    color: Colors.black,
+                                    color: Colors.blueGrey.shade600,
                                     borderRadius: BorderRadius.circular(15.sp)
                                 ),
                                 padding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 7.sp),
@@ -201,37 +246,55 @@ class _AdminPanelState extends State<AdminPanel> {
                             ),
                             SizedBox(height: 1.h,),
                             SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                    onPressed: ()async{
-                                      final newDate = await pickDate(game.startTime);
-                                      if (newDate != null){
-                                        setState(() {
-                                          loading = true;
-                                        });
-                                       try{
-                                         await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
-                                             .update({
-                                           'startTime': Timestamp.fromMillisecondsSinceEpoch(newDate.millisecondsSinceEpoch)
-                                         });
-                                         showNotification(context, 'Start Time Updated!');
-                                         game.startTime = newDate;
-                                       }catch (e){
-                                         showNotification(context, 'Failed: $e', error: true);
-                                       }
-                                      }
-                                      setState(() {
-                                        loading = false;
-                                      });
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10.sp),
-                                        ),
-                                        backgroundColor: Colors.blue.shade800,
-                                        foregroundColor: Colors.white
-                                    ),
-                                    child: Text('Update')))
+                              height: 5.h,
+                              width: double.infinity,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                      child: ElevatedButton(
+                                          onPressed: ()async{
+                                            if (game.startTime == null){
+                                              showNotification(context, 'Start Time already removed!', error: true);
+                                              return;
+                                            }
+                                            try{
+                                              await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
+                                                  .update({
+                                                'startTime': null
+                                              });
+                                              showNotification(context, 'Start Time Removed!');
+                                              game.startTime = null;
+                                              setState(() {});
+                                            }catch (e){
+                                              showNotification(context, 'Failed: $e', error: true);
+                                            }
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(10.sp),
+                                              ),
+                                              backgroundColor: Colors.red.shade100,
+                                              foregroundColor: Colors.black
+                                          ),
+                                          child: Text('Remove'))
+                                  ),
+                                  SizedBox(width: 3.w),
+                                  Expanded(
+                                      child: ElevatedButton(
+                                          onPressed: ()async{
+                                            updateStartTime();
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(10.sp),
+                                              ),
+                                              backgroundColor: Colors.white,
+                                              foregroundColor: Colors.black
+                                          ),
+                                          child: Text('Set Date'))),
+                                ],
+                              ),
+                            )
                           ],
                         ),
                       )
@@ -242,129 +305,67 @@ class _AdminPanelState extends State<AdminPanel> {
                       Container(
                         padding: EdgeInsets.all(5.w),
                         decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey, width: 1),
+                            border: Border.all(color: Colors.grey.shade300, width: 1),
+                            color: CupertinoColors.extraLightBackgroundGray,
                             borderRadius: BorderRadius.circular(10.sp)
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.start,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  height: 9.w,
-                                  decoration: BoxDecoration(
-                                      color: Colors.black,
-                                      borderRadius: BorderRadius.circular(15.sp)
-                                  ),
-                                  padding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 7.sp),
-                                  child: FittedBox(
-                                    child: Text(
-                                      '${game.endTime.year}-${game.endTime.month}-${game.endTime.day}',
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                                      textAlign: TextAlign.center,),
-                                  ),
-                                ),
-                                SizedBox(width: 1.w,),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 7.w,
-                                  height: 7.w,
-                                  padding: EdgeInsets.all(4),
-                                  child: FittedBox(
-                                    child: Text('AT',
-                                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800),
-                                      textAlign: TextAlign.center,),
-                                  ),
-                                ),
-                                SizedBox(width: 1.w,),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 7.w,
-                                  height: 7.w,
-                                  decoration: BoxDecoration(
-                                      color: Colors.black,
-                                      borderRadius: BorderRadius.circular(4.sp)
-                                  ),
-                                  padding: EdgeInsets.all(4),
-                                  child: FittedBox(
-                                    child: Text('${(game.endTime.hour.toString().length < 2 ? '0': '')}'
-                                        '${game.endTime.hour.toString()}',
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                                      textAlign: TextAlign.center,),
-                                  ),
-                                ),
-                                Text(':'),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 7.w,
-                                  height: 7.w,
-                                  decoration: BoxDecoration(
-                                      color: Colors.black,
-                                      borderRadius: BorderRadius.circular(4.sp)
-                                  ),
-                                  padding: EdgeInsets.all(4),
-                                  child: FittedBox(
-                                    child: Text('${(game.endTime.minute.toString().length < 2 ? '0': '')}'
-                                        '${game.endTime.minute}',
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                                      textAlign: TextAlign.center,),
-                                  ),
-                                ),
-                                Text(':'),
-                                AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    width: 7.w,
-                                    height: 7.w,
-                                    decoration: BoxDecoration(
-                                        color: Colors.black,
-                                        borderRadius: BorderRadius.circular(4.sp)
-                                    ),
-                                    padding: EdgeInsets.all(4),
-                                    child: FittedBox(
-                                      child: Text('${(game.endTime.second.toString().length < 2 ? '0': '')}'
-                                          '${game.endTime.second}',
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700,),
-                                        textAlign: TextAlign.center,),
-                                    )
-                                )
-                              ],
-                            ),
+                            timeWidget(game.endTime),
                             SizedBox(height: 1.h),
                             SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                    onPressed: () async{
-                                      final newDate = await pickDate(game.endTime);
-                                      if (newDate != null){
-                                        setState(() {
-                                          loading = true;
-                                        });
-                                        try{
-                                          await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
-                                              .update({
-                                            'endTime': Timestamp.fromMillisecondsSinceEpoch(newDate.millisecondsSinceEpoch)
-                                          });
-                                          showNotification(context, 'End Time Updated!');
-                                          game.endTime = newDate;
-                                        }catch (e){
-                                          showNotification(context, 'Failed: $e', error: true);
-                                        }
-                                      }
-                                      setState(() {
-                                        loading = false;
-                                      });
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(10.sp),
-                                        ),
-                                        backgroundColor: Colors.blue.shade800,
-                                        foregroundColor: Colors.white
+                                height: 5.h,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                        child: ElevatedButton(
+                                            onPressed: ()async{
+                                              if (game.startTime == null){
+                                                showNotification(context, 'You have to set start time first!', error: true);
+                                                return;
+                                              }
+                                              final duration = await myDurationPicker(context);
+                                              if (duration == null) return;
+                                              try{
+                                                await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
+                                                    .update({
+                                                  'endTime': Timestamp.fromDate(game.startTime!.add(duration))
+                                                });
+                                                showNotification(context, 'End Time Updated!');
+                                                game.endTime = game.startTime!.add(duration);
+                                                setState(() {});
+                                              }catch (e){
+                                                showNotification(context, 'Failed: $e', error: true);
+                                              }
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(10.sp),
+                                                ),
+                                                backgroundColor: Colors.blue.shade100,
+                                                foregroundColor: Colors.black
+                                            ),
+                                            child: Text('Set Duration'))
                                     ),
-                                    child: Text('Update'))),
+                                    SizedBox(width: 3.w),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                          onPressed: () async{
+                                            await updateEndTime();
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(10.sp),
+                                              ),
+                                              backgroundColor: Colors.white,
+                                              foregroundColor: Colors.black
+                                          ),
+                                          child: Text('Set Date')),
+                                    )
+                                  ],
+                                )),
                           ],
                         ),
                       )
@@ -591,12 +592,17 @@ class _AdminPanelState extends State<AdminPanel> {
                             itemBuilder: (context, index){
                               final bTime = genTime(teams[index].bonusSeconds);
                               final mTime = genTime(teams[index].minusSeconds);
+                              teams[index].relativeEndTime = game.endTime
+                                  .add(Duration(seconds: teams[index].bonusSeconds))
+                                  .subtract(Duration(seconds: teams[index].minusSeconds));
+                              teams[index].remTimes = game.paused ? teams[index].remTimes :
+                                                      setRemText(teams[index].getRemTime(currentTime, game));
                               return Container(
                                 padding: EdgeInsets.all(2.w),
                                 margin: EdgeInsets.all(1.w),
                                 decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(10.sp),
-                                    border: Border.all(width: 2, color: teams[index].loggedIn > 0 ?
+                                    border: Border.all(width: 2, color: teams[index].devices.isNotEmpty ?
                                     Colors.green : CupertinoColors.systemGrey3)
                                 ),
                                 child: Column(
@@ -620,33 +626,28 @@ class _AdminPanelState extends State<AdminPanel> {
                                           Align(
                                             alignment: Alignment.centerRight,
                                             child: InkWell(
-                                              onTap: teams[index].loggedIn > 0 ? () async{
-                                                final response = await showAlertDialog(context, title: "SIGN OUT TEAM",
-                                                    message: "You will Sign '${teams[index].teamName}' Out of all devices.");
-                                                if (response){
-                                                  try{
-                                                    await FirebaseFirestore.instance.doc(teams[index].id).update({
-                                                      'loggedIn': 0
-                                                    });
-                                                    showNotification(context, '${teams[index].teamName} was sign out successfully.');
-                                                  }catch (e){
-                                                    print(e);
-                                                  }
-                                                }
+                                              onTap: teams[index].devices.isNotEmpty ? () async{
+                                                Navigator.of(context).pushNamed('/teamMembers', arguments: teams[index]);
                                               }: null,
-                                              child: Icon(teams[index].loggedIn > 0 ? CupertinoIcons.person_crop_circle_badge_checkmark :
+                                              child: Icon(teams[index].devices.isNotEmpty ? CupertinoIcons.person_crop_circle_badge_checkmark :
                                               CupertinoIcons.person_crop_circle_badge_xmark,
-                                                  color: teams[index].loggedIn > 0 ? Colors.green : Colors.red),
+                                                  color: teams[index].devices.isNotEmpty ? Colors.green : Colors.red),
                                             ),
                                           )
                                         ],
                                       ),
                                     ),
                                     SizedBox(height: 2.h,),
-                                    timeWidget(game.endTime
-                                        .add(Duration(seconds: teams[index].bonusSeconds))
-                                        .subtract(Duration(seconds: teams[index].minusSeconds))),
-                                    SizedBox(height: 2.w,),
+                                    timeWidget(teams[index].relativeEndTime!),
+                                    SizedBox(height: 1.h,),
+                                    teams[index].remTimes != null ?  Container(
+                                        decoration: BoxDecoration(
+                                          border: Border.all(width: 1, color: Colors.grey.shade300),
+                                          color: CupertinoColors.extraLightBackgroundGray,
+                                          borderRadius: BorderRadius.circular(5.sp)
+                                        ),
+                                        child: timeCounter(teams[index].remTimes!, counterColor: gameStarted ? Colors.black : Colors.grey)) : Container(),
+                                    SizedBox(height: 1.h,),
                                     Row(
                                       children: [
                                         Expanded(
@@ -665,8 +666,8 @@ class _AdminPanelState extends State<AdminPanel> {
                                                 child: Row(
                                                   children: [
                                                     Icon(CupertinoIcons.plus_app),
-                                                    Spacer(),
-                                                    Text('$bTime'),
+                                                    Expanded(child: Text(bTime, overflow: TextOverflow.ellipsis, maxLines: 1,
+                                                    textAlign: TextAlign.right,)),
                                                   ],
                                                 ),
                                               ),
@@ -691,8 +692,8 @@ class _AdminPanelState extends State<AdminPanel> {
                                                   mainAxisAlignment: MainAxisAlignment.center,
                                                   children: [
                                                     Icon(CupertinoIcons.minus_square),
-                                                    Spacer(),
-                                                    Text('$mTime'),
+                                                    Expanded(child: Text(mTime, overflow: TextOverflow.ellipsis, maxLines: 1,
+                                                      textAlign: TextAlign.right,)),
                                                   ],
                                                 ),
                                               ),
@@ -705,7 +706,9 @@ class _AdminPanelState extends State<AdminPanel> {
                                     SizedBox(
                                       width: double.infinity,
                                       child: ElevatedButton(
-                                          onPressed: (){},
+                                          onPressed: (){
+                                            confirmDestruction(index);
+                                          },
                                           style: ElevatedButton.styleFrom(
                                               shape: RoundedRectangleBorder(
                                                 borderRadius: BorderRadius.circular(5.sp),
@@ -721,23 +724,6 @@ class _AdminPanelState extends State<AdminPanel> {
                                   .animate().slideY(delay: Duration(milliseconds: 900+(100*index)),).fadeIn();
                             });
                       }),
-                      SizedBox(height: 2.h,),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                            onPressed: () async{
-                              final c = await showAlertDialog(context, title: "RESET GAME", message: "The game will reset to ALL players!");
-                              print(c);
-                            },
-                            style: ElevatedButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10.sp),
-                                ),
-                                backgroundColor: Colors.grey,
-                                foregroundColor: Colors.black
-                            ),
-                            child: Text('RESET GAME')),
-                      ),
                       SizedBox(height: 5.h,),
                     ],
                   ),
@@ -752,20 +738,64 @@ class _AdminPanelState extends State<AdminPanel> {
     );
   }
 
-  Future<Duration?> pickDuration() async{
-    final duration = await showDurationPicker(
-      context: context,
-      initialTime: Duration(minutes: 1),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(25.sp),
-        color: Colors.white
-      )
-    );
-    return duration;
+
+  updateStartTime() async{
+    final newDate = await pickDate(game.startTime);
+    if (newDate != null){
+      setState(() {
+        loading = true;
+      });
+      try{
+        await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
+            .update({
+          'startTime': Timestamp.fromMillisecondsSinceEpoch(newDate.millisecondsSinceEpoch)
+        });
+        showNotification(context, 'Start Time Updated!');
+        game.startTime = newDate;
+      }catch (e){
+        showNotification(context, 'Failed: $e', error: true);
+      }
+    }
+    setState(() {
+      loading = false;
+    });
+  }
+  updateEndTime() async{
+    final newDate = await pickDate(game.endTime);
+    if (newDate != null){
+      setState(() {
+        loading = true;
+      });
+      try{
+        await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
+            .update({
+          'endTime': Timestamp.fromMillisecondsSinceEpoch(newDate.millisecondsSinceEpoch)
+        });
+        showNotification(context, 'End Time Updated!');
+        game.endTime = newDate;
+      }catch (e){
+        showNotification(context, 'Failed: $e', error: true);
+      }
+    }
+    setState(() {
+      loading = false;
+    });
   }
 
+  // Future<Duration?> pickDuration() async{
+  //   final duration = await showDurationPicker(
+  //     context: context,
+  //     initialTime: Duration(minutes: 1),
+  //     decoration: BoxDecoration(
+  //       borderRadius: BorderRadius.circular(25.sp),
+  //       color: Colors.white
+  //     )
+  //   );
+  //   return duration;
+  // }
+
   Future<DateTime?> pickDate(DateTime? initialDate) async{
-    DateTime? pickedDate;
+    DateTime? pickedDate = DateTime.now();
     await showModalBottomSheet(
         backgroundColor: Colors.transparent,
         context: context,
@@ -787,34 +817,32 @@ class _AdminPanelState extends State<AdminPanel> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    ElevatedButton(
+                    FilledButton(
                       onPressed: (){
                         Navigator.of(context).pop(false);
                       },
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent,
+                          backgroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20.0))
+                              borderRadius: BorderRadius.circular(10.sp))
                       ),
-                      child: Text('Cancel',
+                      child: const Text('Cancel',
                         style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10.sp,
+                          color: Colors.red,
                         ),),
                     ),
-                    ElevatedButton(
+                    FilledButton(
                       onPressed: (){
                         Navigator.of(context).pop(true);
                       },
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
+                          backgroundColor: Colors.green,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20.0))
+                              borderRadius: BorderRadius.circular(10.sp))
                       ),
-                      child: Text('Done',
+                      child: const Text('Confirm',
                         style: TextStyle(
-                          color: Colors.green.shade900,
-                          fontSize: 10.sp,
+                          color: Colors.white,
                         ),),
                     ),
                   ],
@@ -838,13 +866,40 @@ class _AdminPanelState extends State<AdminPanel> {
             ),
           );
         }).then((value) {
-          if (value != null && value){
-            return pickedDate;
+          if (value != null && value == true){
+            //good
+          }else{
+            pickedDate = null;
           }
-          return null;
     });
 
     return pickedDate;
+  }
+
+  confirmDestruction(int i){
+    showCupertinoModalPopup(
+      context: context,
+      builder: (BuildContext context) => CupertinoActionSheet(
+        title: Text("End ${teams[i].teamName}'s Gameplay?"),
+        actions: <Widget>[
+          CupertinoActionSheetAction(
+            child: const Text('Confirm'),
+            onPressed: () async{
+              Navigator.of(context).pop();
+              await FirebaseFirestore.instance
+                  .doc(teams[i].id).update(
+                  {'minusSeconds': 604800});
+            },
+          ),
+          CupertinoActionSheetAction(
+            child: const Text('Cancel', style: TextStyle(color: Colors.red),),
+            onPressed: () async{
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   bonusActionBtn(int i){
@@ -857,7 +912,7 @@ class _AdminPanelState extends State<AdminPanel> {
             child: const Text('Add Time'),
             onPressed: () async{
               Navigator.of(context).pop();
-              final duration = await pickDuration();
+              final duration = await myDurationPicker(context);
               if (duration != null){
                 try{
                   await FirebaseFirestore.instance
@@ -897,7 +952,7 @@ class _AdminPanelState extends State<AdminPanel> {
             child: const Text('Subtract Time'),
             onPressed: () async{
               Navigator.of(context).pop();
-              final duration = await pickDuration();
+              final duration = await myDurationPicker(context);
                         if (duration != null){
                           try{
                             await FirebaseFirestore.instance
@@ -967,3 +1022,28 @@ class _AdminPanelState extends State<AdminPanel> {
   }
 
   }
+
+List<String> setRemText(int timeInSec){
+  int tTime = timeInSec;
+  int tDays = 0;
+  int tHours = 0;
+  int tMinutes= 0;
+  int tSeconds= 0;
+  if (tTime >= (60*60*24)){
+    tDays = tTime ~/ (60*60*24);
+    tTime = tTime % (60*60*24);
+  }
+  if (tTime >= (60*60)) {
+    tHours = tTime ~/ (60*60);
+    tTime = tTime % (60*60);
+  }
+  if (tTime >= 60){
+    tMinutes = tTime ~/ 60;
+    tTime = tTime % 60;
+
+  }
+  tSeconds = tTime < 0 ? 0 : tTime;
+
+
+  return [formatNumber(tDays),formatNumber(tHours), formatNumber(tMinutes), formatNumber(tSeconds)];
+}

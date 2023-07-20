@@ -25,7 +25,8 @@ class _ManageTeamsPageState extends State<ManageTeamsPage> {
   int teamsDone = 0;
   @override
   Widget build(BuildContext context) {
-    final updatedTeams = widget.teams;
+    final updatedTeams = List<TeamObject>.from(widget.teams);
+    updatedTeams.sort((a, b) => a.compareNumbers(b));
     return Scaffold(
       appBar: AppBar(),
       body: Stack(
@@ -171,6 +172,7 @@ class _ManageTeamsPageState extends State<ManageTeamsPage> {
             'bonusSeconds': 0,
             'minusSeconds': 0,
             'loggedIn': 0,
+            'devices': [],
             'gameType': ''
           };
           final newTeamData = await FirebaseFirestore.instance.collection('gamesListeners/firstGame/teams').add(newTeam);
