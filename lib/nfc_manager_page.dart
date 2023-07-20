@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:sizer/sizer.dart';
 import 'package:sketch_games/configuration.dart';
+import 'package:sketch_games/customWidgets.dart';
 
 class NfcManagerPage extends StatefulWidget {
   const NfcManagerPage({super.key});
@@ -69,6 +70,7 @@ class _NfcManagerPageState extends State<NfcManagerPage> {
               SizedBox(height: 5.h),
               TextField(
                 controller: _controller,
+                keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                     contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 2.h),
                     label: Text('Seconds'),
@@ -154,7 +156,7 @@ class _NfcManagerPageState extends State<NfcManagerPage> {
                       )
                   ),
                   onPressed: () async{
-                    final duration = await pickDuration();
+                    final duration = await myDurationPicker(context);
                     if (duration != null){
                       _controller.text = duration.inSeconds.toString();
                     }

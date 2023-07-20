@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,9 @@ import 'package:percent_indicator/circular_percent_indicator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 import 'package:confetti/confetti.dart';
+import 'package:sketch_games/notifiers.dart';
+import 'package:sketch_games/pinput_theme.dart';
+import 'package:vibration/vibration.dart';
 import 'appObjects.dart';
 import 'configuration.dart';
 import 'package:overlay_support/overlay_support.dart';
@@ -48,6 +52,8 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
   late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> gameUpdatesSubscription;
   late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> teamQ;
   late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  late BlackBox box;
+
 
   bool deadTime = false;
   bool isGameStreamActive = false;
@@ -56,8 +62,17 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
   bool gameStarted = false;
   bool gamePaused = true;
   bool notifyUser = false;
+  bool confettiEnabled = false;
+  bool isFirstAttempt = true;
+  bool jackpot = false;
+  bool sequenceMission = false;
+  bool teamCached = true;
+  bool isQueueing = false;
+  bool typingFinished = true;
 
   String notificationMessage = '';
+  String prevNotification = '';
+  String restOfMessage = '';
   Color notificationColor = Colors.white;
 
   Color counterColor = Colors.red;
@@ -73,26 +88,35 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
   late Animation<Color?> animation2;
   late AnimationController controller2;
 
+  TextEditingController pinCodeField = TextEditingController();
+  FocusNode firstPin = FocusNode();
+  List<int> sequenceCodes = [];
+  int atSequence = 0;
+
   String days = '00';
   String hours = '00';
   String seconds = '00';
   String minutes = '00';
   String initialText = '';
+  String? deviceId;
+  String playerName = '';
 
   late TeamObject theTeam;
 
-  final confettiController = ConfettiController(duration: const Duration(seconds: 3));
+  final confettiController = ConfettiController(duration: const Duration(seconds: 1 ));
 
 
-  final player = AudioPlayer();                   // Create a player
+  final player = AudioPlayer();
+  final player2 = AudioPlayer();// Create a player
 
   @override
   void initState() {
     theTeam = widget.team;
-    initGameTimer();
-    initListener();
+    initialize();
     initConnectivityListener();
     player.setAsset('assets/typing.mp3');
+    player.setLoopMode(LoopMode.one);
+    player2.setAsset('assets/notification.mp3');
     controller1 = AnimationController(duration: const Duration(milliseconds: 750), vsync: this);
     animation1 = ColorTween(begin: Colors.black, end: Colors.red).animate(controller1);
     controller2 = AnimationController(duration: const Duration(milliseconds: 750), vsync: this);
@@ -113,7 +137,39 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
       });
     });
   }
+
+  initialize() async{
+    await initListener();
+    initGameTimer();
+    final newToken = await FirebaseMessaging.instance.getToken();
+    final deviceId = await getDeviceId();
+    try{
+      final data = await FirebaseFirestore.instance.doc(theTeam.id).get();
+      final team = teamObjectFromShot(data.data()!,data.reference.path);
+      int i = team.devices.indexWhere((e) => e.deviceId == deviceId);
+      if (i != -1){
+        WriteBatch batch = FirebaseFirestore.instance.batch();
+        batch.update(FirebaseFirestore.instance.doc(team.id), {
+          'devices': FieldValue.arrayRemove([team.devices[i].toJson()])
+        });
+        final newData = Map.from(team.devices[i].toJson());
+        newData['token'] = newToken;
+        batch.update(FirebaseFirestore.instance.doc(team.id), {
+          'devices': FieldValue.arrayUnion([newData])
+        });
+        await batch.commit();
+      }
+      final prefs = await SharedPreferences.getInstance();
+      prefs.setString('loginSession', jsonEncode(team.toJson()));
+      if(kDebugMode) print('here is ...');
+    }catch (e){
+      if (kDebugMode) print(e);
+    }
+
+  }
   initGameTimer(){
+    FirebaseMessaging.instance.subscribeToTopic('general');
+    FirebaseMessaging.instance.subscribeToTopic(theTeam.username);
     final appStartTime = DateTime.now();
     currentTime = DateTime.now();
     gameTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) {
@@ -122,6 +178,8 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
       if (teamEndTime.isBefore(currentTime)){
         if (!deadTime) {
           setState(() {
+            setRemText(0);
+            remainingPercent = 0;
             deadTime = true;
           });
         }
@@ -185,6 +243,7 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
               gameOff = true;
               progressColor = Colors.red;
               counterColor = Colors.red;
+              setRemText(0);
             });
           }
         }else{
@@ -222,35 +281,53 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
 
 
     teamQ = FirebaseFirestore.instance.doc(widget.team.id).snapshots().listen((event) async{
+      deviceId ??= await getDeviceId();
+
       if (event.data() == null){
         final prefs = await SharedPreferences.getInstance();
         prefs.remove('loginSession');
         if (gameTimer != null && gameTimer!.isActive) gameTimer?.cancel();
+        FirebaseMessaging.instance.unsubscribeFromTopic('general');
+        FirebaseMessaging.instance.unsubscribeFromTopic(theTeam.username);
         Navigator.of(context).popAndPushNamed('/');
+
       }else{
         if (mounted){
+          final prefs = await SharedPreferences.getInstance();
           if (kDebugMode) print('new update');
           final newTeam = teamObjectFromShot(event.data()!, event.reference.path);
-          if (newTeam.loggedIn == 0){
-            final prefs = await SharedPreferences.getInstance();
-            prefs.remove('loginSession');
-            if (gameTimer != null && gameTimer!.isActive) gameTimer?.cancel();
-            Navigator.of(context).popAndPushNamed('/');
-            return;
-          }
-          if (newTeam.bonusSeconds > theTeam.bonusSeconds) {
-            showDurationNotification(newTeam.bonusSeconds - theTeam.bonusSeconds);
-            if (gameStarted) confettiController.play();
-          }else if (newTeam.bonusSeconds < theTeam.bonusSeconds){
-            showDurationNotification(theTeam.bonusSeconds - newTeam.bonusSeconds, penalty: true);
+          final i = newTeam.devices.indexWhere((e) => e.deviceId == deviceId);
+          if (newTeam.devices.isEmpty || deviceId == null || i == -1){
+              prefs.remove('loginSession');
+              if (gameTimer != null && gameTimer!.isActive) gameTimer?.cancel();
+              FirebaseMessaging.instance.unsubscribeFromTopic('general');
+              FirebaseMessaging.instance.unsubscribeFromTopic(theTeam.username);
+              Navigator.of(context).popAndPushNamed('/');
+              return;
+          }else{
+            playerName = newTeam.devices[i].name;
           }
 
-          if (newTeam.minusSeconds > theTeam.minusSeconds){
-            showDurationNotification(newTeam.minusSeconds - theTeam.minusSeconds, penalty: true);
-          }else if (newTeam.minusSeconds < theTeam.minusSeconds){
-            showDurationNotification(theTeam.minusSeconds - newTeam.minusSeconds);
+          if (!isFirstAttempt && !jackpot){
+            if (newTeam.bonusSeconds > theTeam.bonusSeconds) {
+              showDurationNotification(newTeam.bonusSeconds - theTeam.bonusSeconds);
+              if (confettiEnabled) confettiController.play();
+            }else if (newTeam.bonusSeconds < theTeam.bonusSeconds){
+              showDurationNotification(theTeam.bonusSeconds - newTeam.bonusSeconds, penalty: true);
+            }
+
+            if (newTeam.minusSeconds > theTeam.minusSeconds){
+              showDurationNotification(newTeam.minusSeconds - theTeam.minusSeconds, penalty: true);
+            }else if (newTeam.minusSeconds < theTeam.minusSeconds){
+              showDurationNotification(theTeam.minusSeconds - newTeam.minusSeconds);
+              if (confettiEnabled) confettiController.play();
+            }
+          }else{
+            isFirstAttempt = false;
+            jackpot = false;
           }
           setState(() {
+            teamCached = false;
             theTeam = newTeam;
           });
         }
@@ -264,6 +341,7 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
   updateChanges(DocumentSnapshot<Map<String, dynamic>> doc){
     // bool started = doc.data()!['started'];
     bool paused = doc.data()!['paused'];
+    bool confetti = doc.data()!['confetti'];
     DateTime? startT = doc.data()!['startTime']?.toDate();
     DateTime endT = doc.data()!['endTime'].toDate();
 
@@ -272,6 +350,7 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
 
     setState(() {
       gamePaused = paused;
+      confettiEnabled = confetti;
     });
 
 
@@ -329,13 +408,6 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
     });
   }
 
-  String formatNumber(int x){
-    if (x.toString().length == 1){
-      return '0${x.toString()}';
-    }
-    return x.toString();
-  }
-
   setRemText(int timeInSec){
     int tTime = timeInSec;
     int tDays = 0;
@@ -356,7 +428,7 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
 
     }
     tSeconds = tTime;
-    days = formatNumber(tDays);
+    days = tDays > 99 ? '99+' : formatNumber(tDays);
     hours = formatNumber(tHours);
     minutes = formatNumber(tMinutes);
     tSeconds = tSeconds < 0 ? 0 : tSeconds;
@@ -367,7 +439,7 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  void didChangeAppLifecycleState(AppLifecycleState state) async{
     switch (state) {
       case AppLifecycleState.resumed:
         if (kDebugMode) print("app in resumed");
@@ -376,6 +448,11 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
         if (kDebugMode) print("app in inactive");
         break;
       case AppLifecycleState.paused:
+        if(!teamCached) {
+          final prefs = await SharedPreferences.getInstance();
+          prefs.setString('loginSession', jsonEncode(theTeam.toJson()));
+          teamCached = true;
+        }
         if (kDebugMode) print("app in paused");
         break;
       case AppLifecycleState.detached:
@@ -391,13 +468,25 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
       final sign = tag.substring(0, 1);
       final seconds = int.tryParse(tag.substring(1, tag.length));
       if (sign == '+'){
-        await FirebaseFirestore.instance.doc(theTeam.id).update({
-          'bonusSeconds': theTeam.bonusSeconds + seconds!
-        });
-        setState(() {
-          theTeam.bonusSeconds+= seconds;
-        });
-        confettiController.play();
+        if (seconds == 77009900880011){
+          //jackpot
+          jackpot = true;
+          await FirebaseFirestore.instance.doc(theTeam.id).update({
+            'bonusSeconds': theTeam.bonusSeconds + 21600
+          });
+          box.addMessage(NotifObject(message: "Congratulations you won!!"));
+          if (confettiEnabled) confettiController.play();
+          await FirebaseFirestore.instance.doc('gamesListeners/firstGame')
+              .update({
+            'paused': true
+          });
+        }else{
+          await FirebaseFirestore.instance.doc(theTeam.id).update({
+            'bonusSeconds': theTeam.bonusSeconds + seconds!
+          });
+        }
+
+
       }else{
         await FirebaseFirestore.instance.doc(theTeam.id).update({
           'minusSeconds': theTeam.minusSeconds + seconds!
@@ -417,258 +506,393 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
     controller1.dispose();
     controller2.dispose();
     confettiController.dispose();
+    player.dispose();
+    player2.dispose();
+    firstPin.dispose();
+    pinCodeField.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  sendQueueNotifications() async{
+    if (isQueueing) {
+      return;
+    }
+    isQueueing = true;
+    while(box.hasQueue){
+      while(!typingFinished){
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      setState(() {
+        typingFinished = false;
+        notifyUser = false;
+      });
+      final message = box.removeNotification();
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (mounted){
+        if(message.data != null && message.data!['sequenceCodes'] != null){
+          sequenceCodes = List<int>.from(jsonDecode(message.data!['sequenceCodes']).map((x) => x));
+          sequenceMission = true;
+          atSequence = 0;
+          sendGameNotification(message: 'Welcome campers, reaching this mission means you have survived. Great Job!!\n'
+              'You are asked to solve phases 1,3 and 4 of the document you will receive from the admin.\n\n'
+              'Good luck', color: Colors.orangeAccent, vibrate: true);
+          firstPin.requestFocus();
+        }else if (message.title != null || message.message != null){
+          await sendGameNotification(message: '${message.title?? ''} '
+              '${message.message?? ''}', color: message.color?? Colors.green, vibrate: message.vibrate?? false);
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    setState(() {
+      isQueueing = false;
+    });
+    box.notify();
+
+
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black.withOpacity(0.98),
-      appBar: AppBar(
-
-        backgroundColor: Colors.black,
-
-        title: Text('SKETCH GAMES', style: TextStyle(color: Colors.white, fontFamily: 'digital', fontSize: 25.sp),),
-      ),
-      body: Center(
-        child: Stack(
-          children: [
-            Align(
-              alignment: Alignment.topCenter,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(height: 10.h,),
-                  SizedBox(
-                    width: 70.w,
-                    height: 15.h,
-                    child: Align(
-                      alignment: notifyUser ? Alignment.centerLeft : Alignment.center,
-                      child: notifyUser ? DefaultTextStyle(
-                        key: Key('MessengerKey'),
-                        style: TextStyle(
-                          fontFamily: 'digital',
-                          color: notificationColor,
-                          fontSize: 17.sp,),
-
-                        child: AnimatedTextKit(
-                          pause: const Duration(seconds: 0),
-                          isRepeatingAnimation: false,
-                          animatedTexts: [
-                            TypewriterAnimatedText(
-                                notificationMessage,
-                                cursor: "\$",
-                                speed: const Duration(milliseconds: 50)),
-                          ],
-                          onFinished: () async{
-                            await player.pause();
-                            Future.delayed(const Duration(seconds: 5)).then((value) async{
-                              await player.seek(const Duration(seconds: 0));
-                              player.play();
-                              setState(() {
-                                notifyUser = false;
-                              });
-                            });
-                          },
-                        ),
-                      ) :
-                      DefaultTextStyle(
-                        key: Key('TITLEKEY'),
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 35.sp,
+    box = BlackNotifier.of(context);
+    if (box.hasQueue && !isQueueing) {
+      sendQueueNotifications();
+    }
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).requestFocus(FocusNode()),
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: Colors.black.withOpacity(0.98),
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          title: Text('SKETCH GAMES', style: TextStyle(color: Colors.white, fontFamily: 'digital', fontSize: 25.sp),),
+        ),
+        body: Center(
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: <Widget>[
+                    SizedBox(height: 6.h,),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: 80.w,
+                      height: 15.h,
+                      child: Align(
+                        alignment: notifyUser ? Alignment.centerLeft : Alignment.center,
+                        child: notifyUser ? DefaultTextStyle(
+                          key: Key('MessengerKey'),
+                          style: TextStyle(
                             fontFamily: 'digital',
-                            color: Colors.white
-                        ),
+                            color: notificationColor,
+                            fontSize: 17.sp,),
 
-                        child: AnimatedTextKit(
+                          child: AnimatedTextKit(
+                            pause: const Duration(seconds: 0),
+                            isRepeatingAnimation: false,
+                            animatedTexts: restOfMessage.isEmpty ? [
+                              TypewriterAnimatedText(
+                                  notificationMessage,
+                                  cursor: "\$",
+                                  speed: const Duration(milliseconds: 100))
+                            ] : [
+                              TypewriterAnimatedText(
+                                  notificationMessage,
+                                  cursor: "\$",
+                                  speed: const Duration(milliseconds: 100)),
+                              TypewriterAnimatedText(
+                                  restOfMessage,
+                                  cursor: "\$",
+                                  speed: const Duration(milliseconds: 100)),
+                            ],
+                            onFinished: () async{
+                              if (player.playing) await player.pause();
+                              setState(() {
+                                typingFinished = true;
+                              });
+                              Future.delayed(const Duration(seconds: 5)).then((value) async{
+                                if (typingFinished){
+                                  setState(() {
+                                    notifyUser = false;
+                                  });
+                                }
+                              });
+                            },
+                          ),
+                        ) :
+                        AnimatedTextKit(
+                          key: const Key('TITLEKEY'),
                           pause: const Duration(seconds: 0),
-                          isRepeatingAnimation: false,
                           animatedTexts: [
-                            TyperAnimatedText(theTeam.teamName, speed: const Duration(milliseconds: 50)),
-                          ],
-                          onFinished: (){
-                            player.pause();
-                          },
-                        ),
-                      ),
-                    )
-                  ).animate().slideY(),
-                  Spacer(),
-                  Center(
-                    child: AnimatedSwitcher(duration: const Duration(milliseconds: 1000),
-                      transitionBuilder: (child, animation){
-                        return SlideTransition(
-                          position: Tween<Offset>(begin: Offset(0, -10), end: Offset(0, 0)).animate(animation),
-                          child: ScaleTransition(scale: animation, child: child),);
-                      },
-                      child: gameOff ?
-                      Text(key: Key('7821h3'),'GAME IS SHUT DOWN',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.red),
-                        textAlign: TextAlign.center,)
-                          : deadTime ? Text(key: Key('t13142'),'YOU RAN OUT OF TIME!',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.red),
-                        textAlign: TextAlign.center,) : gameStarted ? gamePaused ?
-                      Text(key: Key('jsd3303*'),'GAME PAUSED',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.orangeAccent),
-                        textAlign: TextAlign.center,) :
-                      Text(key: Key('t23322'),'GAME STARTED',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.green),
-                        textAlign: TextAlign.center,) :
-                      Text(key: Key('t399087'),'GAME STARTS IN',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.red),
-                        textAlign: TextAlign.center,)
-                    ),
-                  ),
-                  SizedBox(height: 3.h),
-                  Center(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      child: CircleAvatar(
-                        backgroundColor: gameStarted ? gamePaused ? Colors.black.withOpacity(0.98) : Colors.black.withOpacity(0.98) : Colors.red.withOpacity(0.2),
-                        radius: 30.w,
-                        child: CircularPercentIndicator(
-                          // linearGradient: circleGradient,
-                            progressColor: progressColor,
-                            radius: 30.w,
-                            circularStrokeCap: CircularStrokeCap.square,
-                            animation: true,
-                            animateFromLastPercent: true,
-                            animationDuration: 1000,
-                            lineWidth: 3.sp,
-                            percent: remainingPercent,
-                            backgroundColor: Colors.green.withOpacity(0.1),
-                            center: SizedBox(
-                              width: 45.w,
-                              child: Center(
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      FittedBox(
-                                        child: Text(days,
-                                          style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                              fontSize: 25.sp),
-                                          textAlign: TextAlign.center,),
-                                      ).animate().slideX().fade(),
-                                      Text(':', style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                          fontSize: 25.sp),).animate().slideX(delay: const Duration(milliseconds: 100)).fade(),
-                                      FittedBox(
-                                        child: Text(hours,
-                                          style: TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                          fontSize: 25.sp),
-                                          textAlign: TextAlign.center,),
-                                      ).animate().slideX(delay: const Duration(milliseconds: 200)).fade(),
-                                      Text(':', style: TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                          fontSize: 25.sp),).animate().slideX(delay: const Duration(milliseconds: 300)).fade(),
-                                      FittedBox(
-                                        child: Text(minutes,
-                                          style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                              fontSize: 25.sp),
-                                          textAlign: TextAlign.center,),
-                                      ).animate().slideX(delay: const Duration(milliseconds: 400)).fade(),
-                                      Text(':', style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                          fontSize: 25.sp),).animate().slideX(delay: const Duration(milliseconds: 500)).fade(),
-                                      FittedBox(
-                                        child: Text(seconds,
-                                          style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
-                                              fontSize: 25.sp),
-                                          textAlign: TextAlign.center,),
-                                      ).animate().slideX(delay: const Duration(milliseconds: 600)).fade()
-
-                                    ],
-                                  )
-                              ),
+                            FadeAnimatedText(
+                                theTeam.teamName,
+                                duration: const Duration(milliseconds: 3000),
+                            textStyle:
+                            TextStyle(
+                                fontSize: 35.sp,
+                                fontFamily: 'digital',
+                                color: Colors.green,
+                            )
                             ),
 
+                            FadeAnimatedText(
+                                playerName,
+                                duration: const Duration(milliseconds: 2000),
+                                textStyle:
+                                TextStyle(
+                                  fontSize: 25.sp,
+                                  fontFamily: 'digital',
+                                  color: Colors.green.shade900,
+                                )
+                            ),
+                          ],
+                          isRepeatingAnimation: true,
+                          repeatForever: true,
+                        ),
+                      )
+                    ).animate().slideY(),
+                    SizedBox(height: 2.h,),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 1000),
+                      transitionBuilder: (child, animation){
+                        return ScaleTransition(scale: animation, child: child);
+                      },
+                    child: sequenceMission ? AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: 80.w,
+                      height: 15.h,
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Text(key: const Key('codePinReq1212321'),
+                                'Enter ${atSequence == 0 ? 'first' : atSequence == 1 ? 'second' : 'third'} code sequence',
+                                style: TextStyle(
+                                    fontSize: 15.sp, fontFamily: 'digital', color: Colors.red)),
+                            OnlyBottomCursor(controller: pinCodeField, node: firstPin,
+                            onCompleted: (value) async{
+                              pinCodeField.clear();
+                              final code = int.tryParse(value);
+                              if (code != null && code == sequenceCodes[atSequence]){
+                                if (atSequence == 2){
+                                  try{
+                                    sequenceMission = false;
+                                    jackpot = true;
+                                    await FirebaseFirestore.instance.doc(theTeam.id).update({
+                                      'bonusSeconds': theTeam.bonusSeconds + 420
+                                    });
+                                    if(confettiEnabled) confettiController.play();
+                                    box.addMessage(NotifObject(message: 'Great job campers. You will now receive a reward of 7 minutes.\n\n'
+                                        'Take the document and leave.\n\n'
+                                        'Good luck with your next mission.'));
+                                  }catch (e){
+                                    if (kDebugMode) print(e);
+                                  }
+
+                                }else{
+                                  atSequence++;
+                                   box.addMessage(
+                                       NotifObject(message: 'SEQUENCE APPROVED! \n\n${3-atSequence} SEQUENCE${3-atSequence == 1 ? '' : 'S'} LEFT...'));
+                                  firstPin.requestFocus();
+                                }
+                              }else{
+                                try{
+                                  jackpot = true;
+                                  await FirebaseFirestore.instance.doc(theTeam.id).update({
+                                    'minusSeconds': theTeam.minusSeconds + 120
+                                  });
+                                  box.addMessage(NotifObject(message: 'Oops!! \n \n'
+                                      'YOU LOST TWO MINUTES..', color: Colors.red));
+                                  firstPin.requestFocus();
+                                }catch (e){
+                                  if (kDebugMode) print(e);
+                                }
+                              }
+                            },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ) :  Container()),
+                    Spacer(),
+                    Center(
+                      child: AnimatedSwitcher(duration: const Duration(milliseconds: 1000),
+                        transitionBuilder: (child, animation){
+                          return SlideTransition(
+                            position: Tween<Offset>(begin: Offset(0, -10), end: Offset(0, 0)).animate(animation),
+                            child: ScaleTransition(scale: animation, child: child),);
+                        },
+                        child: gameOff ?
+                        Text(key: Key('7821h3'),'GAME IS SHUT DOWN',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.red),
+                          textAlign: TextAlign.center,)
+                            : deadTime ? Text(key: Key('t13142'),'YOU RAN OUT OF TIME!',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.red),
+                          textAlign: TextAlign.center,) : gameStarted ? gamePaused ?
+                        Text(key: Key('jsd3303*'),'GAME PAUSED',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.orangeAccent),
+                          textAlign: TextAlign.center,) :
+                        Text(key: Key('t23322'),'GAME STARTED',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.green),
+                          textAlign: TextAlign.center,) :
+                        Text(key: Key('t399087'),'GAME STARTS IN',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 20.sp, fontFamily: 'digital', color: Colors.red),
+                          textAlign: TextAlign.center,)
+                      ),
+                    ),
+                    SizedBox(height: 3.h),
+                    Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        child: CircleAvatar(
+                          backgroundColor: gameStarted ? gamePaused ? Colors.black.withOpacity(0.98) : Colors.black.withOpacity(0.98) : Colors.red.withOpacity(0.2),
+                          radius: 30.w,
+                          child: CircularPercentIndicator(
+                            // linearGradient: circleGradient,
+                              progressColor: progressColor,
+                              radius: 30.w,
+                              circularStrokeCap: CircularStrokeCap.square,
+                              animation: true,
+                              animateFromLastPercent: true,
+                              animationDuration: 1000,
+                              lineWidth: 3.sp,
+                              percent: remainingPercent,
+                              backgroundColor: Colors.green.withOpacity(0.1),
+                              center: SizedBox(
+                                width: 50.w,
+                                child: Center(
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        FittedBox(
+                                          child: Text(days,
+                                            style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                                fontSize: 25.sp),
+                                            textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.fade,),
+                                        ).animate().slideX().fade(),
+                                        Text(':', style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                            fontSize: 25.sp),).animate().slideX(delay: const Duration(milliseconds: 100)).fade(),
+                                        FittedBox(
+                                          child: Text(hours,
+                                            style: TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                            fontSize: 25.sp),
+                                            textAlign: TextAlign.center,),
+                                        ).animate().slideX(delay: const Duration(milliseconds: 200)).fade(),
+                                        Text(':', style: TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                            fontSize: 25.sp),).animate().slideX(delay: const Duration(milliseconds: 300)).fade(),
+                                        FittedBox(
+                                          child: Text(minutes,
+                                            style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                                fontSize: 25.sp),
+                                            textAlign: TextAlign.center,),
+                                        ).animate().slideX(delay: const Duration(milliseconds: 400)).fade(),
+                                        Text(':', style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                            fontSize: 25.sp),).animate().slideX(delay: const Duration(milliseconds: 500)).fade(),
+                                        FittedBox(
+                                          child: Text(seconds,
+                                            style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                                                fontSize: 25.sp),
+                                            textAlign: TextAlign.center,),
+                                        ).animate().slideX(delay: const Duration(milliseconds: 600)).fade()
+
+                                      ],
+                                    )
+                                ),
+                              ),
+
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  SizedBox(height: 13.h),
-                ],
-              ),
-            ),
-            Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: EdgeInsets.all(10.sp),
-                child: Row(
-                  children: [
-                    SizedBox(width: 3.w),
-                    InkWell(
-                      onTap: isGameStreamActive ? null : (){
-                        initListener();
-                      },
-                      child: Icon(Icons.stream, size: 17.sp, color: isGameStreamActive ? Colors.green : Colors.red,),
-                    ),
-                    SizedBox(width: 5.w),
-                    Icon(connection == ConnectivityResult.wifi ? Icons.wifi :
-                    connection == ConnectivityResult.mobile ? Icons.cell_tower: Icons.airplanemode_active_rounded, size: 17.sp,
-                    color: mobileConnectivity ? Colors.green : Colors.red,),
-                    Spacer(),
-                    Padding(
-                      padding: EdgeInsets.only(right: 3.w),
-                      child: InkWell(onTap: () async{
-                        try{
-                          await FirebaseFirestore.instance.doc(theTeam.id).update({'loggedIn': FieldValue.increment(-1)});
-                          final prefs = await SharedPreferences.getInstance();
-                          prefs.remove('loginSession');
-                          gameTimer?.cancel();
-                          Navigator.of(context).popAndPushNamed('/');
-                        }catch (e){
-                          if (kDebugMode) print(e);
-                        }
-
-
-                      }, child: Icon(Icons.logout, color: Colors.green,)),
-                    )
+                    SizedBox(height: 13.h),
                   ],
                 ),
               ),
-            ),
-            gameStarted && !gamePaused ? SafeArea(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.only(topLeft: Radius.circular(1.sp), bottomRight: Radius.circular(1.sp))
-                    )
+              Align(
+                alignment: Alignment.topLeft,
+                child: Padding(
+                  padding: EdgeInsets.all(10.sp),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 3.w),
+                      InkWell(
+                        onTap: isGameStreamActive ? null : (){
+                          initListener();
+                        },
+                        child: Icon(Icons.stream, size: 17.sp, color: isGameStreamActive ? Colors.green : Colors.red,),
+                      ),
+                      SizedBox(width: 5.w),
+                      Icon(connection == ConnectivityResult.wifi ? Icons.wifi :
+                      connection == ConnectivityResult.mobile ? Icons.cell_tower: Icons.airplanemode_active_rounded, size: 17.sp,
+                      color: mobileConnectivity ? Colors.green : Colors.red,),
+                      Spacer(),
+                      Padding(
+                        padding: EdgeInsets.only(right: 3.w),
+                        child: InkWell(onTap: () async{
+                          final prefs = await SharedPreferences.getInstance();
+                          prefs.remove('loginSession');
+                          if (gameTimer != null && gameTimer!.isActive) gameTimer?.cancel();
+                          FirebaseMessaging.instance.unsubscribeFromTopic('general');
+                          FirebaseMessaging.instance.unsubscribeFromTopic(theTeam.username);
+                          Navigator.of(context).popAndPushNamed('/');
+                        }, child: Icon(Icons.power_settings_new_rounded, color: Colors.green,)),
+                      )
+                    ],
                   ),
-                    onPressed: (){
-
-                      // showDurationNotification(306540, penalty: false);
-
-                      if (gameStarted && !gamePaused) _listenForNFCEvents();
-                    },
-                    icon: Icon(Icons.nfc_sharp), label: Text('SCAN',
-                style:  TextStyle(
-                    fontSize: 20.sp,
-                    fontFamily: 'digital'),),
                 ),
               ),
-            ) : Container(),
-              Align(
-              child:
-              ConfettiWidget(
-                  confettiController: confettiController,
-                  blastDirection: -pi / 2,
-                  emissionFrequency: 0.5,
-                  numberOfParticles: 20,
-                  maxBlastForce: 20,
-                  minBlastForce: 10,
-                  gravity: 0.1,
+              SafeArea(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child,),
+                  child: gameStarted && !gamePaused && !gameOff ? Align(
+                    alignment: Alignment.bottomCenter,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.green,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.only(topLeft: Radius.circular(1.sp), bottomRight: Radius.circular(1.sp)),
+                          ),
+                          side: BorderSide(width: 1, color: Colors.green)
+                      ),
+                      onPressed: (){
+
+                        if (gameStarted && !gamePaused) _listenForNFCEvents();
+                      },
+                      icon: Icon(Icons.nfc_sharp), label: Text('SCAN',
+                      style:  TextStyle(
+                          fontSize: 20.sp,
+                          fontFamily: 'digital'),),
+                    ),
+                  ) : Container(),
+                ),
+              ),
+                SafeArea(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                  child: ConfettiWidget(
+                      confettiController: confettiController,
+                      blastDirection: -pi / 2,
+                      emissionFrequency: 0.5,
+                      numberOfParticles: 20,
+                      maxBlastForce: 20,
+                      minBlastForce: 10,
+                      gravity: 0.1,
+                      ),
                   ),
-              )
-          ],
+                )
+            ],
+          ),
         ),
       ),
     );
@@ -751,76 +975,38 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
     return null;
   }
 
-  showDurationNotification(int seconds, {bool? penalty}) async{
-    final parts = extractListOfDuration(seconds);
-    notificationColor = penalty?? false ? Colors.red.shade300 : Colors.green.shade300;
-    notificationMessage =
-        'You ${(penalty?? false) ? 'Lost' : 'Gained'} Time\n\n'
-        "${parts[0] != 0 ? '${parts[0]} Days${parts[1] == 0 ? '' : ', '}' : ''}"
-        "${parts[1] != 0 ? '${parts[1]} Hours${parts[2] == 0 ? '' : ', '}' : ''}"
-        "${parts[2] != 0 ? '${parts[2]} Minutes${parts[3] == 0 ? '' : ', '}' : ''}${parts[3] != 0 ? '${parts[3]} Seconds ' : ''}";
 
+  sendGameNotification({String? message, Color? color, bool vibrate=true}) async{
+    notificationMessage = message?? notificationMessage;
+    if (notificationMessage.length > 120){
+      final splitter = splitStringIntoParts(notificationMessage, 0.6);
+      notificationMessage = splitter[0];
+      restOfMessage = splitter[1];
+    }else{
+      restOfMessage = '';
+    }
+    notificationColor = color?? Colors.green;
+    if (vibrate) Vibration.vibrate(duration: 1000);
     await player.seek(const Duration(seconds: 0));
     player.play();
     setState(() {
       notifyUser = true;
     });
+  }
 
-    // showOverlayNotification(
-    //     duration: const Duration(seconds: 10),
-    //         (context) {
-    //           return SafeArea(
-    //             child: SizedBox(
-    //               width: 90.w,
-    //               child: Column(
-    //                 children: [
-    //                   SizedBox(height: 15.h),
-    //                   Container(
-    //                     padding: EdgeInsets.all(5.w),
-    //                     decoration: BoxDecoration(
-    //                         color: (penalty?? false) ? Colors.red : Colors.green,
-    //                         borderRadius: BorderRadius.circular(1.sp)
-    //                     ),
-    //                     child: Center(
-    //                         child: Column(
-    //                           children: [
-    //                             Row(
-    //                               mainAxisAlignment: MainAxisAlignment.start,
-    //                               children: [
-    //                                 const Icon(CupertinoIcons.timer, color: Colors.white),
-    //                                 SizedBox(width: 3.w),
-    //                                 Flexible(
-    //                                   child: RichText(
-    //                                       textAlign: TextAlign.left,
-    //                                       maxLines: 6,
-    //                                       overflow: TextOverflow.ellipsis,
-    //                                       text: TextSpan(
-    //                                           style: TextStyle(
-    //                                             fontFamily: 'digital',
-    //                                             color: Colors.white,
-    //                                             fontSize: 15.sp,),
-    //                                           children: [
-    //                                             TextSpan(text: 'You ${(penalty?? false) ? 'Lost' : 'Gained'} Time\n\n',
-    //                                                 style: TextStyle(fontWeight: FontWeight.w600)),
-    //                                             TextSpan(text: "${parts[0] != 0 ? 'DAYS:    ${parts[0]}' : ''}"),
-    //                                             TextSpan(text: "${parts[1] != 0 ? '\nHOURS:   ${parts[1]}' : ''}"),
-    //                                             TextSpan(text: "${parts[2] != 0 ? '\nMINUTES: ${parts[2]}' : ''}"),
-    //                                             TextSpan(text: "${parts[3] != 0 ? '\nSECONDS: ${parts[3]} ' : ''}"),
-    //                                             // TextSpan(text: sentence,style: TextStyle(fontSize: 17.sp))
-    //                                           ]
-    //                                       )),
-    //                                 )
-    //                               ],
-    //                             ),
-    //                           ],
-    //                         )
-    //                     ),
-    //                   ),
-    //                 ],
-    //               ),
-    //             ),
-    //           );
-    //         }
-    // );
+  showDurationNotification(int seconds, {bool? penalty}) async{
+
+    final parts = extractListOfDuration(seconds);
+    notificationMessage =
+        'You ${(penalty?? false) ? 'Lost' : 'Gained'} Time\n\n'
+        "${parts[0] != 0 ? '${parts[0]} Days${parts[1] == 0 ? '' : ', '}' : ''}"
+        "${parts[1] != 0 ? '${parts[1]} Hours${parts[2] == 0 ? '' : ', '}' : ''}"
+        "${parts[2] != 0 ? '${parts[2]} Minutes${parts[3] == 0 ? '' : ', '}' : ''}${parts[3] != 0 ? '${parts[3]} Seconds ' : ''}";
+    box.addMessage(NotifObject(
+        message: 'You ${(penalty?? false) ? 'Lost' : 'Gained'} Time\n\n'
+            "${parts[0] != 0 ? '${parts[0]} Days${parts[1] == 0 ? '' : ', '}' : ''}"
+            "${parts[1] != 0 ? '${parts[1]} Hours${parts[2] == 0 ? '' : ', '}' : ''}"
+            "${parts[2] != 0 ? '${parts[2]} Minutes${parts[3] == 0 ? '' : ', '}' : ''}${parts[3] != 0 ? '${parts[3]} Seconds ' : ''}",
+        color: penalty?? false ? Colors.red : Colors.green));
   }
 }

@@ -1,6 +1,7 @@
 
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:device_info/device_info.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
@@ -282,6 +283,21 @@ class _TeamObjectBoxState extends State<TeamObjectBox> {
                   child: Icon(!obscure ? CupertinoIcons.eye_slash_fill : CupertinoIcons.eye),
                 )
               ],
+            ),
+            widget.team.devices.isEmpty ? Container() :
+            Center(
+              child: ElevatedButton(
+                  onPressed: (){
+                    Navigator.of(context).pushNamed('/teamMembers', arguments: widget.team);
+                  },
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: CupertinoColors.extraLightBackgroundGray,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10.sp))
+                  ),
+                  child: Text('${widget.team.devices.length} Registered Member'
+                      '${widget.team.devices.length == 1 ? '' : 's'}')),
             )
           ],
         )
@@ -322,4 +338,92 @@ bool isSameDay(DateTime dateTime1, DateTime dateTime2) {
 }
 
 
+extension StringExtension on String {
+  String capitalize() {
+    if (isEmpty) return this;
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
+  }
 
+  String capitalizeAllWords() {
+    final words = split(' ');
+    final capitalizedWords = words.map((word) => word.capitalize());
+    return capitalizedWords.join(' ');
+  }
+}
+
+
+
+String formatNumber(int x){
+  if (x.toString().length == 1){
+    return '0${x.toString()}';
+  }
+  return x.toString();
+}
+
+Widget timeCounter(List<String> times, {Color counterColor = Colors.black}){
+  return  Center(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FittedBox(
+            child: Text(times[0],
+              style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                  fontSize: 25.sp),
+              textAlign: TextAlign.center,),
+          ),
+          Text(':', style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+              fontSize: 25.sp),),
+          FittedBox(
+            child: Text(times[1],
+              style: TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                  fontSize: 25.sp),
+              textAlign: TextAlign.center,),
+          ),
+          Text(':', style: TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+              fontSize: 25.sp),),
+          FittedBox(
+            child: Text(times[2],
+              style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                  fontSize: 25.sp),
+              textAlign: TextAlign.center,),
+          ),
+          Text(':', style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+              fontSize: 25.sp),),
+          FittedBox(
+            child: Text(times[3],
+              style:  TextStyle(fontFamily: 'digital', color: counterColor, fontWeight: FontWeight.w700,
+                  fontSize: 25.sp),
+              textAlign: TextAlign.center,),
+          )
+
+        ],
+      )
+  );
+}
+
+Future<String> getDeviceId() async{
+  String deviceId = '';
+  final DeviceInfoPlugin deviceInfoPlugin = DeviceInfoPlugin();
+  if (Platform.isAndroid) {
+    await deviceInfoPlugin.androidInfo.then((AndroidDeviceInfo androidInfo) {
+      deviceId = androidInfo.androidId;
+    });
+  } else if (Platform.isIOS) {
+    await deviceInfoPlugin.iosInfo.then((IosDeviceInfo iosInfo) {
+      deviceId = iosInfo.identifierForVendor;
+    });
+  }
+  return deviceId;
+}
+
+List<String> splitStringIntoParts(String input, double ratio) {
+  List<String> words = input.split(' ');
+  int wordCount = words.length;
+
+  int firstPartCount = (wordCount * ratio).ceil();
+
+  List<String> firstPart = words.sublist(0, firstPartCount);
+  List<String> secondPart = words.sublist(firstPartCount);
+
+  return [firstPart.join(' '), secondPart.join(' ')];
+}
