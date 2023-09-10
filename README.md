@@ -1,16 +1,37 @@
-# sketch_games
 
-A new Flutter project.
+# README
 
-## Getting Started
+**Project Overview:**
 
-This project is a starting point for a Flutter application.
+- Developed for Heliopolis Sports Team
+- Real-life game app with multiple interactions
+- Designed for use at sport camps
+**Technology Stack:**
 
-A few resources to get you started if this is your first Flutter project:
+- Front-end and back-end developed using Flutter
+- Back-end powered by Firebase Authentication and Firebase Firestore
+- NFC (Near Field Communication) technology integrated
+**Key Features:**
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- NFC Tag System:
+    - Triggers in-game events
+    - Enhances interactivity
+- Custom Notification System:
+    - Tailored for game-specific needs
+    - Keeps players informed
+- Dual Views:
+    - Player view
+    - Admin view
+- Time Synchronization:
+    - Ensures coordination between players
+    - Relies on precise time management
+**Purpose:**
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Offers an engaging and immersive gaming experience
+- Demonstrates the potential of mobile app technology in enhancing sports camps
+- Showcases the fusion of innovative game design and cutting-edge technology
+This structured presentation highlights the key aspects of the project, providing a clear and organized overview of its objectives, technologies, and features.
+## Demo
+
+
+[<img src="https://img.youtube.com/vi/JPMDEV83v1g/0.jpg" width="50%">](https://youtu.be/JPMDEV83v1g "Full Demo")
