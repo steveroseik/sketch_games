@@ -35,11 +35,6 @@ class RouteGenerator{
       case '/admin':
         if (FirebaseAuth.instance.currentUser != null) return MyCustomRoute(builder: (_) => AdminPanel());
         return _errorRoute();
-      case '/manageTeams': if (FirebaseAuth.instance.currentUser != null &&
-      args is List<TeamObject>) {
-          return MaterialPageRoute(builder: (_) => ManageTeamsPage(teams: args));
-        }
-        return _errorRoute();
       case '/completeMember': {
         if (args is TeamObject) return MaterialPageRoute(builder: (context) => CompleteTeam(team: args));
         return _errorRoute();
@@ -63,8 +58,8 @@ class RouteGenerator{
         if (FirebaseAuth.instance.currentUser != null) return MaterialPageRoute(builder: (_) => NfcManagerPage());
         return _errorRoute();
       case '/manageTeams': if (FirebaseAuth.instance.currentUser != null &&
-          args is List<TeamObject>) {
-        return MaterialPageRoute(builder: (_) => ManageTeamsPage(teams: args));
+          args is List) {
+        return MaterialPageRoute(builder: (_) => ManageTeamsPage(teams: args[0], game: args[1],));
       }
       return _errorRoute();
       case '/notif': {

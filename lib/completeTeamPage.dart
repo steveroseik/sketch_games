@@ -53,12 +53,13 @@ class _CompleteTeamState extends State<CompleteTeam> {
                       children: [
                         TextFormField(
                           controller: firstName,
+                          textInputAction: TextInputAction.next,
+                          textCapitalization: TextCapitalization.words,
                           decoration: InputDecoration(
                               filled: true,
                               contentPadding: EdgeInsets.symmetric(horizontal: 2.h),
                               errorStyle: const TextStyle(height: 2),
                               fillColor: CupertinoColors.extraLightBackgroundGray,
-
                               label: const Text('First Name'),
                               border: const OutlineInputBorder(),
                               focusedBorder: OutlineInputBorder(
@@ -89,6 +90,7 @@ class _CompleteTeamState extends State<CompleteTeam> {
                         SizedBox(height: 1.h),
                         TextFormField(
                           controller: lastName,
+                          textCapitalization: TextCapitalization.words,
                           decoration: InputDecoration(
                               filled: true,
                               contentPadding: EdgeInsets.symmetric( horizontal: 2.h),
@@ -185,11 +187,11 @@ class _CompleteTeamState extends State<CompleteTeam> {
         'token': token,
         'deviceId': deviceId
       };
-      print('we are here');
+
       await FirebaseFirestore.instance.doc(widget.team.id).update({
         'devices': FieldValue.arrayUnion([devJson])
       });
-      print('bravooo');
+
       // prefs.setString('loginSession', jsonEncode(widget.team.toJson()));
       // widget.team.devices.add(Device.fromJson(devJson));
       Navigator.of(context).pushNamedAndRemoveUntil('/gameOne', (route) => false, arguments: widget.team);

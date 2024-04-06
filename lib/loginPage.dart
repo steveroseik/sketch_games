@@ -48,11 +48,6 @@ class _LoginPageState extends State<LoginPage> {
     if (prefs.getKeys().contains('loginSession')){
       TeamObject team = teamObjectFromJson(prefs.getString('loginSession')!);
 
-      // final dataCheck = await FirebaseFirestore.instance.collectionGroup('teams')
-      //     .where('username', isEqualTo: team.username).where('password', isEqualTo: team.password).get();
-      // if (dataCheck.docs.isNotEmpty && dataCheck.docs.first.data()['loggedIn'] > 0){
-      //   team = teamObjectFromShot(dataCheck.docs.first.data(), team.id);
-      //   prefs.setString('loginSession', jsonEncode(team.toJson()));
       if (mounted) Navigator.of(context).popAndPushNamed('/gameOne', arguments: team);
     }else{
       prefs.remove('loginSession');
@@ -60,15 +55,6 @@ class _LoginPageState extends State<LoginPage> {
         loading = false;
       });
     }
-
-
-    // }else{
-    //   setState(() {
-    //     loading = false;
-    //   });
-    // }
-
-
   }
 
   @override
@@ -90,86 +76,87 @@ class _LoginPageState extends State<LoginPage> {
               children: [
                 Column(
                   children: [
-                    Text('SKETCH GAMES',
-                    style: TextStyle(
-                      fontFamily: 'Quartzo',
-                      fontSize: 40.sp
-                    ),
-                    textAlign: TextAlign.center,),
-                    SizedBox(height: 10.h,),
+                    Image.asset('assets/Black.png', width: 60.w),
+                    SizedBox(height: 5.h),
                     Form(
                       key: _formKey,
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            controller: usernameField,
-                            decoration: InputDecoration(
-                              contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 2.h),
-                              errorStyle: const TextStyle(height: 2),
-                              label: Text('Username'),
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10.sp)
-                                )
-                            ),
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            validator: (text){
-                              if (text != null && text.isNotEmpty) {
-                                userError = false;
-                                return null;
-                              }
-                              userError = true;
-                              return 'input username';
-                            },
-                          ),
-                          SizedBox(height: 2.h,),
-                          TextFormField(
-                            controller: passField,
-                            obscureText: !viewPass,
-                            decoration: InputDecoration(
-                                suffixIcon: InkWell(
-                                    onTap: (){
-                                      setState(() {
-                                        viewPass = !viewPass;
-                                      });
-                                    },
-                                    child: Icon(viewPass ? CupertinoIcons.eye_slash : CupertinoIcons.eye_solid)),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 14.sp),
+                        child: Column(
+                          children: [
+                            TextFormField(
+                              controller: usernameField,
+                              textInputAction: TextInputAction.next,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: InputDecoration(
                                 contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 2.h),
-                                label: Text('Password'),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10.sp)
-                              )
+                                errorStyle: const TextStyle(height: 2),
+                                label: const Text('Username'),
+                                  border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10.sp)
+                                  )
+                              ),
+                              autovalidateMode: AutovalidateMode.onUserInteraction,
+                              validator: (text){
+                                if (text != null && text.isNotEmpty) {
+                                  userError = false;
+                                  return null;
+                                }
+                                userError = true;
+                                return 'input username';
+                              },
                             ),
-                            onFieldSubmitted: (_) {
-                              if (!loading) login();
-                            },
-                            autovalidateMode: AutovalidateMode.onUserInteraction,
-                            validator: (text){
-                              if (text != null && text.isNotEmpty) {
-                                userError = false;
-                                return null;
-                              }
-                              userError = true;
-                              return 'input a password';
-                            },
-                          ),
-                          SizedBox(height: 2.h,),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10.sp),
+                            SizedBox(height: 2.h,),
+                            TextFormField(
+                              controller: passField,
+                              obscureText: !viewPass,
+                              decoration: InputDecoration(
+                                  suffixIcon: InkWell(
+                                      onTap: (){
+                                        setState(() {
+                                          viewPass = !viewPass;
+                                        });
+                                      },
+                                      borderRadius: BorderRadius.circular(25.sp),
+                                      child: Icon(viewPass ? CupertinoIcons.eye_slash : CupertinoIcons.eye_solid)),
+                                  contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 2.h),
+                                  label: Text('Password'),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10.sp)
                                 )
                               ),
-                              onPressed: loading ? null : login,
-                                child: const Text('LOGIN',
-                                  style: TextStyle(
-                                    fontFamily: 'Quartzo',
-                                ),),),
-                          ),
-                        ],
+                              onFieldSubmitted: (_) {
+                                if (!loading) login();
+                              },
+                              autovalidateMode: AutovalidateMode.onUserInteraction,
+                              validator: (text){
+                                if (text != null && text.isNotEmpty) {
+                                  userError = false;
+                                  return null;
+                                }
+                                userError = true;
+                                return 'input a password';
+                              },
+                            ),
+                            SizedBox(height: 2.h,),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.black,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10.sp),
+                                  )
+                                ),
+                                onPressed: loading ? null : login,
+                                  child: const Text('LOGIN',
+                                    style: TextStyle(
+                                      fontFamily: 'Quartzo',
+                                  ),),),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     Spacer(),
@@ -218,7 +205,9 @@ class _LoginPageState extends State<LoginPage> {
       try{
         if (validateEmail(usernameField.text)){
           final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: usernameField.text, password: passField.text);
-          if (cred.user != null) Navigator.of(context).popAndPushNamed('/admin');
+          if (cred.user != null) {
+            // should redirect
+          }
         }else{
 
 
@@ -226,12 +215,10 @@ class _LoginPageState extends State<LoginPage> {
               .where('username', isEqualTo: usernameField.text)
               .where('password', isEqualTo: passField.text).get();
           if (data.docs.isNotEmpty){
-            print('goood');
             final prefs = await SharedPreferences.getInstance();
-            prefs.remove('loginSession');
             final team = teamObjectFromShot(data.docs.first.data(), data.docs.first.reference.path);
             print('teamID: ${team.id}');
-            if (team.devices.length >= 3){
+            if (team.devices.length >= team.maxPlayers){
              print(data.docs.first.data());
               showNotification(context, 'This team has reached maximum login sessions, Contact your admin!', error: true);
             }else{

@@ -161,7 +161,6 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
       }
       final prefs = await SharedPreferences.getInstance();
       prefs.setString('loginSession', jsonEncode(team.toJson()));
-      if(kDebugMode) print('here is ...');
     }catch (e){
       if (kDebugMode) print(e);
     }
@@ -458,6 +457,8 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
       case AppLifecycleState.detached:
         if (kDebugMode) print("app in detached");
         break;
+      case AppLifecycleState.hidden:
+        // TODO: Handle this case.
     }
   }
 
@@ -566,7 +567,7 @@ class _Game1MainScreenState extends State<Game1MainScreen> with TickerProviderSt
         backgroundColor: Colors.black.withOpacity(0.98),
         appBar: AppBar(
           backgroundColor: Colors.black,
-          title: Text('SKETCH GAMES', style: TextStyle(color: Colors.white, fontFamily: 'digital', fontSize: 25.sp),),
+          title: Text('HST GAMES', style: TextStyle(color: Colors.white, fontFamily: 'digital', fontSize: 25.sp),),
         ),
         body: Center(
           child: Stack(

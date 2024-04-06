@@ -136,14 +136,14 @@ Future<String?> showTextDialog(BuildContext context, {required String textLabel,
   return confirm ? ctrl.text : null;
 }
 
-Future<int> showNumberPicker(context) async{
+Future<int> showNumberPicker(context, {String? title}) async{
 
   int number = 0;
   await showDialog(
     context: context,
     builder: (context){
       return AlertDialog(
-        title: Text('Total Number of Teams'),
+        title: Text(title?? 'Choose Number'),
         content: SizedBox(
           height: 30.h,
           child: CupertinoPicker(

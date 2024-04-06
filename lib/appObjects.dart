@@ -39,6 +39,7 @@ class TeamObject {
   String teamName;
   DateTime? relativeEndTime;
   List<String>? remTimes;
+  int maxPlayers;
 
   TeamObject({
     required this.password,
@@ -50,6 +51,7 @@ class TeamObject {
     required this.devices,
     required this.teamName,
     required this.id,
+    required this.maxPlayers,
     this.relativeEndTime
   });
 
@@ -61,6 +63,7 @@ class TeamObject {
     bonusSeconds: json["bonusSeconds"],
     username: json["username"],
     gameType: json["gameType"],
+    maxPlayers: json["maxPlayers"],
     devices: List<Device>.from(json["devices"].map((x) => Device.fromJson(x))),
     teamName: json["teamName"],
     relativeEndTime: json['endTime'] != null ? DateTime.fromMillisecondsSinceEpoch(json['endTime']) : null,
@@ -74,6 +77,7 @@ class TeamObject {
       teamName: json["teamName"],
       minusSeconds: json['minusSeconds'],
       loggedIn: json['loggedIn'],
+      maxPlayers: json["maxPlayers"],
       gameType: json["gameType"],
       devices: List<Device>.from(json["devices"].map((x) => Device.fromJson(x))),
   );
@@ -86,6 +90,7 @@ class TeamObject {
     "bonusSeconds": bonusSeconds,
     "username": username,
     "gameType": gameType,
+    "maxPlayers": maxPlayers,
     "devices": List<dynamic>.from(devices.map((x) => x.toJson())),
     "teamName": teamName,
     "endTime": relativeEndTime?.millisecondsSinceEpoch
@@ -159,7 +164,7 @@ class Device {
 
 
 FirstGame firstGameFromJson(String str) => FirstGame.fromJson(json.decode(str));
-
+FirstGame firstGameFromShot(Map<String, dynamic> data) => FirstGame.fromShot(data);
 String firstGameToJson(FirstGame data) => json.encode(data.toJson());
 
 class FirstGame {
@@ -168,13 +173,15 @@ class FirstGame {
   bool paused;
   bool started;
   bool confetti;
+  int maxPlayers;
 
   FirstGame({
     this.startTime,
     required this.endTime,
     required this.paused,
     required this.started,
-    required this.confetti
+    required this.confetti,
+    required this.maxPlayers
   });
 
   factory FirstGame.fromJson(Map<String, dynamic> json) => FirstGame(
@@ -183,6 +190,7 @@ class FirstGame {
     paused: json["paused"],
     started: json["started"],
     confetti: json["confetti"],
+    maxPlayers: json["maxPlayers"],
   );
   factory FirstGame.fromShot(Map<String, dynamic> json) => FirstGame(
     startTime: json["startTime"]?.toDate(),
@@ -190,6 +198,7 @@ class FirstGame {
     paused: json["paused"],
     started: json["started"],
     confetti: json["confetti"],
+    maxPlayers: json["maxPlayers"]
   );
 
   Map<String, dynamic> toJson() => {
@@ -197,13 +206,15 @@ class FirstGame {
     "endTime": endTime,
     "paused": paused,
     "started": started,
-    "confetti": confetti
+    "confetti": confetti,
+    "maxPlayers": maxPlayers
   };
   Map<String, dynamic> toShot() => {
     "startTime": startTime != null ? Timestamp.fromMillisecondsSinceEpoch(startTime!.millisecondsSinceEpoch) : null,
     "endTime": Timestamp.fromMillisecondsSinceEpoch(endTime.millisecondsSinceEpoch),
     "paused": paused,
     "started": started,
-    "confetti": confetti
+    "confetti": confetti,
+    "maxPlayers": maxPlayers
   };
 }

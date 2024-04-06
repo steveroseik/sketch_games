@@ -11,13 +11,6 @@ import 'package:sketch_games/configuration.dart';
 
 class PushNotificationService {
   Future<void> setupInteractedMessage() async {
-//     await Firebase.initializeApp();
-// // This function is called when ios app is opened, for android case `onDidReceiveNotificationResponse` function is called
-// //     FirebaseMessaging.onMessageOpenedApp.listen(
-// //           (RemoteMessage message) {
-// //         print('@Notification: ${message.data}');
-// //       },
-// //     );
     await enableIOSNotifications();
     await registerNotificationListeners();
     // await FirebaseMessaging.instance.subscribeToTopic('ADMINOTIF');
@@ -82,6 +75,7 @@ class PushNotificationService {
       }
     });
 
+    // transfered to main
 // onMessage is called when the app is in foreground and a notification is received
 //     FirebaseMessaging.onMessage.listen((RemoteMessage? message) {
 //       print('$message = firebase_message');

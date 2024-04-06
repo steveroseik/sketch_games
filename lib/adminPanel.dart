@@ -100,7 +100,9 @@ class _AdminPanelState extends State<AdminPanel> {
 
     gameSub = FirebaseFirestore.instance.doc('gamesListeners/firstGame').snapshots().listen((event){
 
+
       if (event.data() != null){
+        game = firstGameFromShot(event.data()!);
         if (event.data()!['paused'] != game.paused){
           setState(() => game.paused = !game.paused);
         }
@@ -441,7 +443,7 @@ class _AdminPanelState extends State<AdminPanel> {
                                     await FirebaseFirestore.instance
                                         .doc('gamesListeners/firstGame').update(
                                         {
-                                          'paused': !game.paused,
+                                          'paused': false,
                                           'endTime': Timestamp
                                               .fromMillisecondsSinceEpoch(game
                                               .endTime.add(pauseDuration).millisecondsSinceEpoch)
@@ -452,10 +454,9 @@ class _AdminPanelState extends State<AdminPanel> {
                                     await FirebaseFirestore.instance
                                         .doc('gamesListeners/firstGame').update(
                                         {
-                                          'paused': !game.paused,
+                                          'paused': true,
                                         });
                                   }
-                                  game.paused = !game.paused;
                                 }catch (e){
                                   print(e);
                                 }
@@ -489,7 +490,7 @@ class _AdminPanelState extends State<AdminPanel> {
                           ).animate().slideY(delay: const Duration(milliseconds: 800),).fadeIn(),
                           ElevatedButton.icon(
                               onPressed: (){
-                                Navigator.of(context).pushNamed('/manageTeams', arguments: teams);
+                                Navigator.of(context).pushNamed('/manageTeams', arguments: [teams, game]);
                               },
                               style: ElevatedButton.styleFrom(
                                 padding: EdgeInsets.symmetric(horizontal: 2.h, vertical: 1.h),

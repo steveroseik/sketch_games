@@ -2,12 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Sketch Games</string>
+	<string>HST Games</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -29,23 +33,18 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NFCReaderUsageDescription</key>
-	<string>This app will need NFC reading to play the games.</string>
+	<string>HST Games will need NFC reading to play the games.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>SKETCH GAMES requests camera access.</string>
+	<string>HST Games requests camera access.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to the microphone for audio purposes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SKETCH GAMES requests Photos Library access.</string>
+	<string>HST Games requests Photos Library access.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-    <key>BGTaskSchedulerPermittedIdentifiers</key>
-    <array>
-        <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    </array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
-		<string>processing</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchStoryboardName</key>

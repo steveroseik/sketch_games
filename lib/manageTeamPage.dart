@@ -11,7 +11,8 @@ import 'configuration.dart';
 
 class ManageTeamsPage extends StatefulWidget {
   final List<TeamObject> teams;
-  const ManageTeamsPage({super.key, required this.teams});
+  final FirstGame game;
+  const ManageTeamsPage({super.key, required this.teams, required this.game});
 
   @override
   State<ManageTeamsPage> createState() => _ManageTeamsPageState();
@@ -28,7 +29,7 @@ class _ManageTeamsPageState extends State<ManageTeamsPage> {
     final updatedTeams = List<TeamObject>.from(widget.teams);
     updatedTeams.sort((a, b) => a.compareNumbers(b));
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(title: Text('TEAMS MANAGER',style: TextStyle(fontFamily: 'Quartzo'),)),
       body: Stack(
         children: [
           Padding(
@@ -36,11 +37,54 @@ class _ManageTeamsPageState extends State<ManageTeamsPage> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
+                  ListTile(
+                    onTap: ()async{
+
+                      final n = await showNumberPicker(context);
+                      if (n == 0){
+                        // cancelled
+                      }else{
+                        try{
+                          WriteBatch batch = FirebaseFirestore.instance.batch();
+                          batch.update(FirebaseFirestore.instance.doc('gamesListeners/firstGame'),
+                              {'maxPlayers': n});
+                          for ( var team in widget.teams){
+                            batch.update(FirebaseFirestore.instance.doc(team.id),
+                                {'devices': [],
+                                'maxPlayers': n});
+                          }
+                          await batch.commit();
+                          showNotification(context, 'Max players updated! All players were Signed out.');
+                          setState(() {
+                            widget.game.maxPlayers = n;
+                          });
+                        }catch (e){
+                          showNotification(context, 'Failed to update maximum number, try again!', error: true);
+                        }
+                      }
+
+                    },
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10.sp)
+                    ),
+                    tileColor: CupertinoColors.extraLightBackgroundGray,
+                    title:  Text('Maximum Players Per Team',
+                    style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.w600),),
+                    trailing: FittedBox(
+                      child: Row(
+                        children: [
+                          Text('${widget.game.maxPlayers}',
+                            style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),)
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 2.h),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () async{
-                        final total = await showNumberPicker(context);
+                        final total = await showNumberPicker(context, title: 'Total Number of Teams');
                         if (total != 0) generateTeams(total);
                       },
                       style: ElevatedButton.styleFrom(
@@ -172,6 +216,7 @@ class _ManageTeamsPageState extends State<ManageTeamsPage> {
             'bonusSeconds': 0,
             'minusSeconds': 0,
             'loggedIn': 0,
+            'maxPlayers': widget.game.maxPlayers,
             'devices': [],
             'gameType': ''
           };

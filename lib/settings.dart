@@ -35,7 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     borderRadius: BorderRadius.circular(10.sp)
                 ),
                 tileColor: CupertinoColors.extraLightBackgroundGray,
-                title: Text('Confetti animations'),
+                title: const Text('Confetti animations'),
                 trailing:  Switch.adaptive(
                   value: widget.game.confetti,
                   onChanged: (newValue) async{
